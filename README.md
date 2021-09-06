@@ -1,0 +1,5 @@
+- 👋 Hi, I’m @j13622
+- 👀 I’m interested in all things CS!
+- 🌱 I’m currently learning intro CS for the second time (I already am experienced in Java and Python, specifically Data Science with Python)
+- 💞️ I’m looking to collaborate on anything!
+- 📫 How to reach me: email jamesk13622@gmail.com
