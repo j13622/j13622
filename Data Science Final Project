@@ -1,0 +1,988 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "James Kerwin - 1/28/21"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Analysing Kickstarter Data\n",
+    "\n",
+    "Data gathered from: https://www.kaggle.com/kemical/kickstarter-projects?select=ks-projects-201612.csv\n",
+    "\n",
+    "Kickstarter is \"an American public benefit corporation based in Brooklyn, New York, that maintains a global crowdfunding platform focused on creativity\". The data I used was collected from the Kickstarter platform. It includes information on projects from the Kickstarter website; a project is a finite work with a clear goal that you’d like to bring to life. Think albums, books, or films. The columns included are:\n",
+    "\n",
+    "ID: internal kickstarter id <br>\n",
+    "name: name of project <br>\n",
+    "category: specific category of project (Narrative Film, Documentary, Restaurant, Drink, etc.) <br>\n",
+    "main_category: general category of project (Film & Video, Food, etc.) <br>\n",
+    "currency: currency used to support project <br>\n",
+    "deadline: deadline for crowdfunding <br>\n",
+    "goal: the funding goal is the amount of money that a creator needs to complete their project <br>\n",
+    "launched: date project launched <br>\n",
+    "pledged: amount pledged by “crowd” <br>\n",
+    "state: current state the project is in (successful, canceled, failed) <br>\n",
+    "backers: number of backers <br>\n",
+    "country: country pledged from <br>\n",
+    "usd_pledged: pledged amount in USD (conversion made by KS) <br>\n",
+    "usd_pledged_real: pledged amount in USD (conversion made by fixer.io api) <br>\n",
+    "usd_goal_real: goal amount in USD <br>\n",
+    "\n",
+    "My research questions include: \n",
+    "\n",
+    "1. Can the name of a project determine its success?\n",
+    "\n",
+    "2. Can projects be clustered into groups based off of their parameters (such as, for example, projects that nearly succeeded and had a short deadline, or food projects that were wildly successful)?\n",
+    "\n",
+    "3. Can other factors determine a project’s success (such as the amount of time a project had to be funded, the initial funding goal it sets, or the main category it’s placed in)?"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#importing all required libraries\n",
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "%matplotlib inline\n",
+    "import string\n",
+    "import matplotlib\n",
+    "import matplotlib.pyplot as plt\n",
+    "import seaborn as sns\n",
+    "from sklearn.preprocessing import StandardScaler\n",
+    "from sklearn.cluster import KMeans\n",
+    "from sklearn.decomposition import PCA\n",
+    "import nltk\n",
+    "from sklearn.feature_extraction.text import CountVectorizer\n",
+    "from sklearn.feature_extraction.text import TfidfTransformer\n",
+    "from sklearn.feature_extraction.text import TfidfVectorizer\n",
+    "from textblob import TextBlob\n",
+    "from sklearn.naive_bayes import MultinomialNB\n",
+    "from sklearn.linear_model import SGDClassifier\n",
+    "from sklearn.model_selection import train_test_split\n",
+    "from sklearn.neighbors import KNeighborsClassifier"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Preprocessing"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "The data includes two csv files. The following code is intended to determine which csv I should use."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#getting dataframes\n",
+    "df1 = pd.read_csv('ks-projects-201612.csv')\n",
+    "df2 = pd.read_csv('ks-projects-201801.csv')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Initially loading the dataframes was somewhat annoying because they were not UTF-8 encoded, so pandas refused to load them. I ameliorated this issue by encoding them in UTF-8 through Notepad++, but I imagine the remaining Dtypewarning was because of unusual types following encoding (perhaps I'm wrong). "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#inspecting\n",
+    "df1.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#inspecting\n",
+    "df1.info()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#inspecting\n",
+    "df2.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#inspecting\n",
+    "df2.info()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Upon immediate inspection, there exists some overlap between the two dataframes I created, although they are not exactly the same. In dataframe 1, the rows at indices 0, 1, 2, and 3 seem to match the rows at indices 0, 2, 3, and 4 in dataframe 2 (not perfectly because of the additional columns at ends of df1 and df2). Since df1 was smaller than df2, I figured that df2 might contain all of the information within df1; the following code tests this hypothesis (df2 also contains two additional columns missing in df1, which could prove beneficial)."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#determining which IDs from df1 are in df2\n",
+    "df1['in_df2'] = df1['ID '].isin(df2['ID'])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#the number of IDs from df1 in df2. If df2 contains all of df1, should equal number of rows in df1\n",
+    "df1['in_df2'].value_counts()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "df2 seems to contain every instance from df1 (assuming each project has a unique ID number, which seems intuitively true). From now on I'll only be using df2."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#number of NaN values\n",
+    "df2.isna().sum()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#few enough NaN to drop\n",
+    "df2.dropna(inplace=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#create timeline column - time passed from launch date to deadline\n",
+    "df2['launched'] = pd.to_datetime(df2['launched'])\n",
+    "df2['deadline'] = pd.to_datetime(df2['deadline'])\n",
+    "df2['timeline'] = df2['deadline'] - df2['launched']\n",
+    "df2['timeline'] = df2['timeline'].apply(lambda x: x.days)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Visualization"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#inspecting correlations\n",
+    "corrMatrix = df2.corr()\n",
+    "sns.heatmap(corrMatrix, annot=True)\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#histograms\n",
+    "fig = plt.figure(figsize = (15,20))\n",
+    "ax = fig.gca()\n",
+    "df2.hist(ax = ax)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#some of these make more sense on a log scale\n",
+    "fig = plt.figure(figsize = (15,20))\n",
+    "plt.subplot(3, 3, 1)\n",
+    "plt.hist(df2['goal'], log=True)\n",
+    "plt.title('goal')\n",
+    "plt.subplot(3, 3, 2)\n",
+    "plt.hist(df2['pledged'], log=True)\n",
+    "plt.title('pledged')\n",
+    "plt.subplot(3, 3, 3)\n",
+    "plt.hist(df2['backers'], log=True) \n",
+    "plt.title('backers')\n",
+    "plt.subplot(3, 3, 4)\n",
+    "plt.hist(df2['usd pledged'], log=True)\n",
+    "plt.title('usd pledged')\n",
+    "plt.subplot(3, 3, 5)\n",
+    "plt.hist(df2['usd_pledged_real'], log=True) \n",
+    "plt.title('usd_pledged_real')\n",
+    "plt.subplot(3, 3, 6)\n",
+    "plt.hist(df2['usd_goal_real'], log=True) \n",
+    "plt.title('usd_goal_real')\n",
+    "plt.subplot(3, 3, 7)\n",
+    "plt.hist(df2['timeline'], log=True) \n",
+    "plt.title('timeline')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#prepares data for NLP and also used for following histogram\n",
+    "def apply_state(x):\n",
+    "    if x == 'successful':\n",
+    "        return 1\n",
+    "    else:\n",
+    "        return -1\n",
+    "df2['state_#'] = df2['state'].apply(lambda x: apply_state(x))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Although the \"state\" column includes more than just 'successful' and 'failed' (also includes 'canceled', among others), I treat everything as 'failed' if it isn't successful simply for the purposes of this project."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "plt.hist(df2['state_#']) \n",
+    "plt.title('failed or succeeded')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Natural Language Processing\n",
+    "\n",
+    "Here I will attempt to answer my first research question."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#Preprocessing, turning names all into strings and removing whitespace\n",
+    "df2['name'] = df2['name'].apply(lambda x: str(x))\n",
+    "df2['name'] = df2['name'].str.strip()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#More preprocessing\n",
+    "def full_remove(x, removal_list):\n",
+    "    for w in removal_list:\n",
+    "        x = x.replace(w, ' ')\n",
+    "    return x\n",
+    "\n",
+    "## Remove digits\n",
+    "digits = [str(x) for x in range(10)]\n",
+    "remove_digits = [full_remove(x, digits) for x in df2['name']]\n",
+    "\n",
+    "## Remove punctuation\n",
+    "remove_punc = [full_remove(x, list(string.punctuation)) for x in remove_digits]\n",
+    "\n",
+    "## Make everything lower-case and remove any white space\n",
+    "sents_lower = [x.lower() for x in remove_punc]\n",
+    "sents_processed = [x.strip() for x in sents_lower]"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "I kept preprocessing relatively light; I felt as if the removal of stopwords could only create problems as I'd have projects with names like \"Where Hank?\" and other short, uninformative phrases. It's possible stopwords do have an observable effect on the success of a project, so they were kept."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#Making sure it worked\n",
+    "sents_processed[1]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#Stemmer\n",
+    "def stem_with_lancaster(words):\n",
+    "    porter = nltk.LancasterStemmer()\n",
+    "    new_words = [porter.stem(w) for w in words]\n",
+    "    return new_words    "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#Stemming sentences\n",
+    "lancaster = [stem_with_lancaster(x.split()) for x in sents_processed]\n",
+    "lancaster = [\" \".join(i) for i in lancaster]\n",
+    "lancaster[0:10]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#Creating NLP vectorizer, transforming features, etc.\n",
+    "vectorizer = CountVectorizer(analyzer = \"word\", \n",
+    "                             preprocessor = None, \n",
+    "                             max_features = 6000, ngram_range=(1,5))\n",
+    "data_features = vectorizer.fit_transform(lancaster)\n",
+    "tfidf_transformer = TfidfTransformer()\n",
+    "data_features_tfidf = tfidf_transformer.fit_transform(data_features)\n",
+    "data_mat = data_features_tfidf.toarray()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#converting to numpy arrays\n",
+    "y = df2['state_#'].to_numpy()\n",
+    "labels = df2['name'].to_numpy()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#Used for determining test size in later cell\n",
+    "y.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#This step was necessary because this took too much space on my computer\n",
+    "#Didn't have enough RAM to work with millions of floats later, plus they were just 1s and 0s so I converted to shorts through numpy\n",
+    "data_mat = data_mat.astype('b')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#Creating test and training data\n",
+    "np.random.seed(0)\n",
+    "test_index = np.append(np.random.choice((np.where(y==-1))[0], 31555, replace=False), np.random.choice((np.where(y==1))[0], 31555, replace=False))\n",
+    "train_index = list(set(range(len(labels))) - set(test_index))\n",
+    "train_data = data_mat[train_index,]\n",
+    "train_labels = y[train_index]\n",
+    "test_data = data_mat[test_index,]\n",
+    "test_labels = y[test_index]"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "I chose 31555 (so test size was 63110 total) because that made test size around 17% of total size and it made train size around 83%. These are pretty good proportions"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#Create polarity function and subjectivity function\n",
+    "pol = lambda x: TextBlob(x).sentiment.polarity\n",
+    "sub = lambda x: TextBlob(x).sentiment.subjectivity\n",
+    "pol_list = [pol(x) for x in sents_processed]\n",
+    "sub_list = [sub(x) for x in sents_processed]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#inspect polarity and subjectivity of first 10 sentences\n",
+    "for i in range(10):\n",
+    "    print(sents_processed[i], '\\t', pol_list[i], sub_list[i])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "It seems as if not a lot can be inferred from these sentences. They don't seem very skewed in any direction, which is an early indication that the model might not be working perfectly."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Naive Bayes"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "nb_clf = MultinomialNB().fit(train_data, train_labels)\n",
+    "nb_preds_test = nb_clf.predict(test_data)\n",
+    "nb_errs_test = np.sum((nb_preds_test > 0.0) != (test_labels > 0.0))\n",
+    "print(\"Test error: \", float(nb_errs_test)/len(test_labels))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Logistic Regression"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "## Fit logistic classifier on training data\n",
+    "clf = SGDClassifier(loss=\"log\", penalty=\"none\")\n",
+    "clf.fit(train_data, train_labels)\n",
+    "## Pull out the parameters (w,b) of the logistic regression model\n",
+    "w = clf.coef_[0,:]\n",
+    "b = clf.intercept_\n",
+    "## Get predictions on training and test data\n",
+    "preds_train = clf.predict(train_data)\n",
+    "preds_test = clf.predict(test_data)\n",
+    "## Compute errors\n",
+    "errs_train = np.sum((preds_train > 0.0) != (train_labels > 0.0))\n",
+    "errs_test = np.sum((preds_test > 0.0) != (test_labels > 0.0))\n",
+    "print(\"Training error: \", float(errs_train)/len(train_labels))\n",
+    "print(\"Test error: \", float(errs_test)/len(test_labels))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "## Convert vocabulary into a list:\n",
+    "vocab = np.array([z[0] for z in sorted(vectorizer.vocabulary_.items(), key=lambda x:x[1])])\n",
+    "## Get indices of sorting w\n",
+    "inds = np.argsort(w)\n",
+    "## Words with large negative values\n",
+    "neg_inds = inds[0:50]\n",
+    "print(\"Highly negative words: \")\n",
+    "# MB: fixed bug here\n",
+    "print([x for x in list(vocab[neg_inds])])\n",
+    "## Words with large positive values\n",
+    "pos_inds = inds[-49:-1]\n",
+    "print(\"Highly positive words: \")\n",
+    "print([x for x in list(vocab[pos_inds])])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Both the Naive Bayes and the Logistic Regression had a very high degree of error"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "It seems as if natural language processing fails at determining whether a kickstarter project will be successful, seeing as how the test error is 49.9%. Perhaps owing to the short names of projects and the unusual words that they use (many of which are unique product names, which rarely repeat), no easily determinable pattern can be found. Perhaps with a larger dataset a trend could be determined (or perhaps the project name can never be correlated to its success, and its success is largely dependent on other, irrelevant factors), but here it is not so. Nonetheless it is interesting to inspect the highly negative and positive words: negative words (words conducive to failure) include \"black\", \"cancel\", \"eclips[e]\", \"photograph\", \"halloween\", \"apparel\", and, (interestingly), \"kickstart\". Positive words include \"beer\", \"farm\", \"laundry\", \"pickl[e]\", \"medicin[e]\", and \"cult\". Although the natural language processing fails to determine whether a project will succeed or fail, it seems as if projects focusing on such topics as beer, laundry, medicine, and pickles will be successful, but photography projects or halloween projects probably will not. Quite interesting."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "It should also be noted that the failure of the NLP is not surprising. Whereas determining whether a movie review is positive or negative can be done even by children in elementary school, probably very few humans could accurately determine whether a kickstarter would be successful based purely off of its name. Perhaps with a more powerful computer and more data available it could be done, but here it seems impossible; it is simply too difficult a task."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "So, ultimately, the answer to my first research question is no - the name of a project cannot determine its success."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# K-Means Clustering\n",
+    "Here I will attempt to answer my second research question."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Initially, I wanted to incorporate the category and each state of a project into the clustering, but as you will see, that will not pan out by the end. Nonetheless I incorporated and demonstrate why I could not use them later on."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#one-hot encoding categories\n",
+    "df_category = pd.get_dummies(df2['main_category'])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#one-hot encoding states\n",
+    "df_state = pd.get_dummies(df2['state'])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "I chose to one-hot encode the state and category columns so that the full range of their info could be stored and clustered later on (without bias, as one-hot encoding is an unbiased form of encoding; rather than assigning each category a number, which would be interpreted by algorithms to mean that some categories are 'closer' than others, it generates vectors for the categories, with a 1 in the category that the project is located in and a 0 for the rest)."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#removing extraneous columns\n",
+    "df_full = df2[['ID','backers','usd_pledged_real','usd_goal_real','timeline']]"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "I decided to remove many columns, because a lot of them were just variations on the same info. For example, goal and usd_goal_real are very similar, as are pledged and usd_pledged_real. Also if I included too many columns (like currency), etc. this would never load on my computer"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#putting it together\n",
+    "df_full = pd.concat([df_full, df_category, df_state], axis=1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#scaling to remove bias from large numbers\n",
+    "scaler = StandardScaler()\n",
+    "df_scaled = scaler.fit_transform(df_full)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#generating scores for WCSS graph\n",
+    "score = []\n",
+    "range_values = range(1, 35)\n",
+    "for i in range_values:\n",
+    "    kmeans = KMeans(n_clusters = i)\n",
+    "    kmeans.fit(df_scaled)\n",
+    "    score.append(kmeans.inertia_)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#WCSS Graph\n",
+    "plt.plot(score, 'bx-')\n",
+    "plt.title('WCSS vs. Number of Clusters')\n",
+    "plt.xlabel('Number of Clusters')\n",
+    "plt.ylabel('WCSS Score')\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "The elbow point seems to occur around 19 clusters. This is simply too many clusters to ever run on my computer. I'll have to remove the dummy variables for category and convert state into simple 0 and 1s. I did not want to simplify this project to that extent, but with the amount of data I'm working with, it seems necessary."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#making new dataframe with fewer columns\n",
+    "df_full = df2[['backers','usd_pledged_real','usd_goal_real','timeline']]\n",
+    "def apply_state(x):\n",
+    "    if x == 'successful':\n",
+    "        return 1\n",
+    "    else:\n",
+    "        return 0\n",
+    "df_full['state_#'] = df2['state'].apply(lambda x: apply_state(x))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#checking out dataframe\n",
+    "df_full.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#scaling again\n",
+    "df_scaled = scaler.fit_transform(df_full)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#generating scores again for WCSS Graph\n",
+    "score = []\n",
+    "range_values = range(1, 20)\n",
+    "for i in range_values:\n",
+    "    kmeans = KMeans(n_clusters = i)\n",
+    "    kmeans.fit(df_scaled)\n",
+    "    score.append(kmeans.inertia_)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#Making WCSS Graph\n",
+    "plt.plot(score, 'bx-')\n",
+    "plt.title('WCSS vs. Number of Clusters')\n",
+    "plt.xlabel('Number of Clusters')\n",
+    "plt.ylabel('WCSS Score')\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "That's much better. The elbow point seems to be around 7 clusters, so I'll choose that for my k."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#Generating kmeans\n",
+    "kmeans = KMeans(n_clusters = 7, init = 'k-means++', max_iter = 300, n_init = 10, random_state = 0)\n",
+    "labels = kmeans.fit_predict(df_scaled)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#creating dataframe with clusters\n",
+    "df_cluster = pd.concat([df_full, pd.DataFrame({'cluster': labels})], axis = 1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#graphing\n",
+    "for i in df_cluster.columns:\n",
+    "    plt.figure(figsize = (25, 5))\n",
+    "    for j in range(7):\n",
+    "        plt.subplot(1, 7, j+1)\n",
+    "        cluster = df_cluster[ df_cluster['cluster'] == j ]\n",
+    "        cluster[i].hist(bins  = 20)\n",
+    "        plt.title( '{}\\nCluster {}'.format(i, j))\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "scrolled": false
+   },
+   "outputs": [],
+   "source": [
+    "pca = PCA(n_components = 2)\n",
+    "principal_comp = pca.fit_transform(df_scaled)\n",
+    "pca_df = pd.DataFrame(data = principal_comp, columns = ['pca1', 'pca2'])\n",
+    "pca_df = pd.concat([pca_df, pd.DataFrame({'cluster': labels})], axis = 1)\n",
+    "plt.figure(figsize = (10, 10))\n",
+    "ax = sns.scatterplot(x = 'pca1', y = 'pca2', hue = 'cluster', data = pca_df, palette = ['red', 'green', 'blue', 'black', 'yellow', 'orange', 'purple'])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "I am happy to report that the clustering, unlike the Natural Language Processing, was a success! The following clusters were generated, with corresponding characteristics:\n",
+    "\n",
+    "Cluster 0: Structurally similar to cluster 1. Fewer backers than cluster 1, but other than that the most backers; most pledged USD overall; the second highest goals; long timelines<br>\n",
+    "Cluster 1: Structurally similar to cluster 0. Most backers of any cluster; second most pledged USD overall; the third highest goals; long timelines<br>\n",
+    "Cluster 2: Mostly a small number of backers, with relatively little pledged, very low goals, and medium-length timelines; highest proportion of success, but also the smallest cluster by a large margin<br>\n",
+    "Cluster 3: The median number of backers of any cluster; median amount pledged, as well; high goals, with timelines similar to clusters 5 and 6<br>\n",
+    "Cluster 4: Second least number of backers; similar amount pledged to cluster 2, although more variation; median goals with a short timeline<br>\n",
+    "Cluster 5: Few backers and regular amount pledged with high goals. Has the most 'failed' projects (proportionally)<br>\n",
+    "Cluster 6: Similar to clusters 1 and 2 in number of backers, amount pledged, and goal, but a shorter timeline<br>"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "It seems the answer to my second research question is yes - this data can absolutely be clustered."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# KNN Modeling\n",
+    "Here I will attempt to answer my third research question."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#Used just these 2 columns because I feared the others might be too correlatory to success of a project\n",
+    "#(obviously, I thought, a project with a lot of money pledged will be successful)\n",
+    "df_knn = df2[['usd_goal_real','timeline']]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#Decided to use the dummies I made earlier here\n",
+    "df_knn = pd.concat([df_knn, df_category], axis=1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df_knn.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#x consists of goal, timeline, and the category\n",
+    "x = df_knn"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#whether or not a project failed\n",
+    "y = df2['state'].apply(lambda x: apply_state(x))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#creating training/testing data\n",
+    "training_data, validation_data, training_labels, validation_labels = train_test_split (\n",
+    "    x,\n",
+    "    y,\n",
+    "    test_size = 0.2,\n",
+    "    random_state = 100\n",
+    "    )"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#scaling data\n",
+    "sc = StandardScaler()\n",
+    "training_data = sc.fit_transform(training_data)\n",
+    "validation_data = sc.transform(validation_data)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#classifying\n",
+    "classifier = KNeighborsClassifier(n_neighbors= 3)\n",
+    "classifier.fit(training_data, training_labels.values.ravel())\n",
+    "print(classifier.score(validation_data, validation_labels))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Seeing as how this (relatively simple) KNN code took upwards of 20 minutes for my computer to run, I've decided to opt out of testing cv scores on this dataset. I'll stick with 3 neighbors for now."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "I'm pleasantly surprised by the received classifier score. It seems the model I created (with just 3 neighbors) using just the goal, amount of time passed, and the category can determine the success of a project 63% of the time. Since the success of a project is a very complicated thing, I'm surprised it can be modeled (with more than random chance) by using such simple characteristics as its timeline, its goal, and its category. It seems the answer to my third research question is yes - other factors (like category, timeline, and goal$) CAN determine a project’s success, to a certain extent."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.7.6"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
